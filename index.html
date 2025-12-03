@@ -1,64 +1,702 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>3D Particle Interaction</title>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Apple Particle System</title>
     <style>
-      body {
-        margin: 0;
-        padding: 0;
-        overflow: hidden;
-        background-color: #000;
-        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-      }
-      #root {
-        width: 100vw;
-        height: 100vh;
-        position: relative;
-      }
-      video {
-        position: absolute;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        object-fit: cover;
-        transform: scaleX(-1); /* Mirror the webcam */
-        z-index: 0;
-      }
-      canvas {
-        position: absolute;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        z-index: 1;
-      }
-      /* Hide scrollbars */
-      ::-webkit-scrollbar {
-        display: none;
-      }
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #000;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        #container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        /* Hidden video element for processing */
+        #webcam {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transform: scaleX(-1);
+            opacity: 0; /* Pure black background requirement */
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+        }
+
+        /* UI Overlay */
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 10;
+            pointer-events: none;
+        }
+
+        .panel {
+            position: absolute;
+            top: 24px;
+            left: 24px;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            padding: 16px;
+            color: white;
+            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
+            pointer-events: auto;
+        }
+
+        .header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 8px;
+        }
+
+        .icon-hand {
+            color: #60a5fa; /* blue-400 */
+        }
+
+        .title {
+            font-weight: bold;
+            font-size: 1.125rem;
+        }
+
+        .desc {
+            font-size: 0.875rem;
+            color: #d1d5db; /* gray-300 */
+            max-width: 200px;
+            line-height: 1.4;
+            margin-bottom: 12px;
+        }
+
+        .score-container {
+            display: flex;
+            align-items: flex-end;
+            gap: 8px;
+        }
+
+        .score-val {
+            font-family: monospace;
+            font-size: 1.875rem;
+            font-weight: bold;
+            color: #4ade80; /* green-400 */
+            line-height: 1;
+        }
+
+        .score-label {
+            font-size: 0.75rem;
+            color: #9ca3af; /* gray-400 */
+            margin-bottom: 4px;
+        }
+
+        #fullscreen-btn {
+            position: absolute;
+            top: 24px;
+            right: 24px;
+            width: 48px;
+            height: 48px;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            color: white;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.2s;
+            pointer-events: auto;
+        }
+
+        #fullscreen-btn:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        #loading {
+            position: absolute;
+            inset: 0;
+            background: black;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            z-index: 50;
+            transition: opacity 0.5s;
+        }
+
+        .spinner {
+            width: 48px;
+            height: 48px;
+            border: 4px solid rgba(255, 255, 255, 0.2);
+            border-top-color: #3b82f6;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 16px;
+        }
+
+        .status-text {
+            font-size: 1.1rem;
+            font-weight: 300;
+            letter-spacing: 0.05em;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .hint {
+            position: absolute;
+            bottom: 16px;
+            right: 16px;
+            color: rgba(255, 255, 255, 0.3);
+            font-size: 0.75rem;
+            pointer-events: none;
+        }
     </style>
+    
+    <!-- Import Map for direct browser usage of Three.js and MediaPipe -->
     <script type="importmap">
-{
-  "imports": {
-    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
-    "@mediapipe/tasks-vision": "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.9/+esm",
-    "react": "https://esm.sh/react@18.2.0",
-    "react/jsx-runtime": "https://esm.sh/react@18.2.0/jsx-runtime",
-    "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
-    "react-dom": "https://esm.sh/react-dom@18.2.0",
-    "lucide-react": "https://esm.sh/lucide-react@0.303.0?deps=react@18.2.0",
-    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
-    "react/": "https://aistudiocdn.com/react@^19.2.0/"
-  }
-}
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+            "@mediapipe/tasks-vision": "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.9/+esm"
+        }
+    }
+    </script>
+</head>
+<body>
+
+<div id="container">
+    <video id="webcam" autoplay playsinline muted></video>
+    <canvas id="canvas"></canvas>
+
+    <div id="loading">
+        <div class="spinner"></div>
+        <div class="status-text">Initializing Vision System...</div>
+    </div>
+
+    <div id="ui-layer">
+        <div class="panel">
+            <div class="header">
+                <!-- SVG Hand Icon -->
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon-hand"><path d="M18 11V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v0"/><path d="M14 10V4a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v2"/><path d="M10 10.5V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/></svg>
+                <span class="title">Virtual Touch</span>
+            </div>
+            <p class="desc">
+                Move your hand to touch the falling particles. <br>Tap anywhere to enable audio.
+            </p>
+            <div class="score-container">
+                <span id="score" class="score-val">0</span>
+                <span class="score-label">DESTROYED</span>
+            </div>
+        </div>
+
+        <button id="fullscreen-btn">
+            <!-- SVG Maximize Icon -->
+            <svg id="icon-max" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg>
+            <!-- SVG Minimize Icon (Hidden by default) -->
+            <svg id="icon-min" style="display:none;" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v3a2 2 0 0 1-2 2H3"/><path d="M21 8h-3a2 2 0 0 1-2-2V3"/><path d="M3 16h3a2 2 0 0 1 2 2v3"/><path d="M16 21v-3a2 2 0 0 1 2-2h3"/></svg>
+        </button>
+
+        <div class="hint">Hand Tracking Active</div>
+    </div>
+</div>
+
+<script type="module">
+    import * as THREE from 'three';
+    import { HandLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
+
+    // --- Constants ---
+    const SPAWN_INTERVAL = 1000;
+    const GRAVITY = -0.05;       // For explosions
+    const APPLE_GRAVITY = -0.005; // For falling apples
+    const APPLE_RADIUS = 1.5;
+    const PIANO_NOTES = [261.63, 293.66, 329.63, 349.23, 392.0, 440.0, 493.88];
+    const HIT_COLORS = ['#ff0000', '#ff7f00', '#ffff00', '#00ff00', '#0000ff', '#8000ff'];
+
+    // --- Globals ---
+    let scene, camera, renderer;
+    let particles = []; // Array to hold both Apples and Explosions
+    let handLandmarker = null;
+    let lastSpawnTime = 0;
+    let handPositions = [];
+    let cursorMeshes = [];
+    let score = 0;
+    let audioCtx = null;
+    let animationFrameId;
+
+    // --- DOM Elements ---
+    const videoElement = document.getElementById('webcam');
+    const canvasElement = document.getElementById('canvas');
+    const loadingScreen = document.getElementById('loading');
+    const scoreElement = document.getElementById('score');
+    const fullscreenBtn = document.getElementById('fullscreen-btn');
+    const iconMax = document.getElementById('icon-max');
+    const iconMin = document.getElementById('icon-min');
+
+    // --- Material Definitions ---
+    // Pure Red Material for all spawning apples. Never modified globally.
+    const BASE_APPLE_MATERIAL = new THREE.PointsMaterial({ 
+        size: 0.08,
+        vertexColors: true,
+        transparent: true,
+        opacity: 0.9,
+        sizeAttenuation: true
+    });
+
+    // --- Geometry Helper: Apple ---
+    function createAppleGeometry(radius, segments, baseColorHex) {
+        const positions = [];
+        const colors = [];
+        
+        const baseColor = new THREE.Color(baseColorHex);
+        const yellowColor = new THREE.Color(0xffdd00); 
+        const darkColor = new THREE.Color(0x3e2723);   
+        const greenColor = new THREE.Color(0x558b2f);  
+
+        for (let lat = 0; lat <= segments; lat++) {
+            const v = lat / segments;
+            const phi = v * Math.PI; 
+            const lonSegments = Math.floor(segments * 1.5); 
+            
+            for (let lon = 0; lon < lonSegments; lon++) {
+                const u = lon / lonSegments;
+                const theta = u * Math.PI * 2;
+
+                let x = -Math.sin(phi) * Math.cos(theta);
+                let z = -Math.sin(phi) * Math.sin(theta);
+                let y = Math.cos(phi);
+
+                // Shape Deformation
+                const rho = Math.sqrt(x*x + z*z);
+                if (y > 0) { x *= 1.0 + (y * 0.3); z *= 1.0 + (y * 0.3); }
+                const topDipRadius = 0.4;
+                if (rho < topDipRadius && y > 0) {
+                    const dip = Math.pow((topDipRadius - rho) / topDipRadius, 2);
+                    y -= dip * 0.8;
+                }
+                const bottomDipRadius = 0.5;
+                if (rho < bottomDipRadius && y < 0) {
+                    const dip = Math.pow((bottomDipRadius - rho) / bottomDipRadius, 1.5);
+                    y += dip * 0.3;
+                }
+                if (y < 0) {
+                    const taper = 1.0 - (Math.abs(y) * 0.3);
+                    x *= taper; z *= taper;
+                }
+
+                const thickness = 0.05 + Math.random() * 0.05;
+                x *= radius * (1 + thickness);
+                y *= radius * (1 + thickness);
+                z *= radius * (1 + thickness);
+
+                positions.push(x, y, z);
+
+                // Vertex Coloring
+                const c = baseColor.clone();
+                if (y > radius * 0.3) {
+                    const noise = Math.sin(x * 5) * Math.cos(z * 5);
+                    if (noise > 0.5) c.lerp(yellowColor, 0.3);
+                    if (rho < radius * 0.2) c.lerp(greenColor, 0.6);
+                    if (rho < radius * 0.1) c.lerp(darkColor, 0.8);
+                }
+                if (y < -radius * 0.6) c.lerp(darkColor, 0.5);
+                const isFront = z > 0.5 * radius;
+                if (isFront && x > 0 && y > 0) c.lerp(new THREE.Color(0xffaaaa), 0.1);
+
+                colors.push(c.r, c.g, c.b);
+            }
+        }
+
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+        geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+        return geometry;
+    }
+
+    // --- Geometry Helper: Explosion ---
+    function createExplosionGeometry(startPos, count, color) {
+        const positions = [];
+        const velocities = [];
+        const colors = [];
+
+        for (let i = 0; i < count; i++) {
+            positions.push(startPos.x, startPos.y, startPos.z);
+            
+            const u = Math.random();
+            const v = Math.random();
+            const theta = 2 * Math.PI * u;
+            const phi = Math.acos(2 * v - 1);
+            
+            const speed = 0.1 + Math.random() * 0.2;
+            velocities.push(
+                Math.sin(phi) * Math.cos(theta) * speed,
+                Math.sin(phi) * Math.sin(theta) * speed,
+                Math.cos(phi) * speed
+            );
+            
+            colors.push(color.r, color.g, color.b);
+        }
+
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+        geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+        return { geometry, velocities };
+    }
+
+    // --- Audio System ---
+    function initAudio() {
+        if (!audioCtx) {
+            const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+            audioCtx = new AudioContextClass();
+        }
+        if (audioCtx.state === 'suspended') {
+            audioCtx.resume();
+        }
+    }
+
+    function playPianoNote() {
+        if (!audioCtx) return;
+        const freq = PIANO_NOTES[Math.floor(Math.random() * PIANO_NOTES.length)];
+        
+        const osc = audioCtx.createOscillator();
+        const gainNode = audioCtx.createGain();
+
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+
+        gainNode.gain.setValueAtTime(0.3, audioCtx.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.4);
+
+        osc.connect(gainNode);
+        gainNode.connect(audioCtx.destination);
+
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.4);
+    }
+
+    // --- Game Logic ---
+    function spawnApple() {
+        if (!scene || !camera) return;
+
+        // Use fixed Red geometry and shared material
+        const geometry = createAppleGeometry(APPLE_RADIUS, 40, '#ff0000');
+        const mesh = new THREE.Points(geometry, BASE_APPLE_MATERIAL);
+
+        // Calculate visible spawn area
+        const dist = camera.position.z;
+        const vFOV = THREE.MathUtils.degToRad(camera.fov);
+        const visibleHeight = 2 * Math.tan(vFOV / 2) * dist;
+        const visibleWidth = visibleHeight * camera.aspect;
+
+        const spawnMargin = APPLE_RADIUS + 1;
+        const spawnRange = Math.max(0, (visibleWidth / 2) - spawnMargin);
+        const x = (Math.random() - 0.5) * 2 * spawnRange;
+
+        mesh.position.set(x, 10, 0); // Start above screen
+        mesh.rotation.x = Math.random() * 0.5;
+        mesh.rotation.y = Math.random() * Math.PI;
+
+        scene.add(mesh);
+
+        particles.push({
+            mesh: mesh,
+            velocity: new THREE.Vector3(0, -0.05 - (Math.random() * 0.05), 0),
+            type: 'APPLE',
+            life: 1,
+            id: Math.random().toString()
+        });
+    }
+
+    function explode(pos, color) {
+        if (!scene) return;
+        
+        const { geometry, velocities } = createExplosionGeometry(pos, 100, color);
+        
+        const material = new THREE.PointsMaterial({
+            color: color,
+            vertexColors: true,
+            size: 0.15,
+            transparent: true,
+            opacity: 1
+        });
+
+        const mesh = new THREE.Points(geometry, material);
+        mesh.userData = { velocities };
+        
+        scene.add(mesh);
+        
+        particles.push({
+            mesh,
+            velocity: new THREE.Vector3(),
+            type: 'EXPLOSION',
+            life: 1.0,
+            id: Math.random().toString()
+        });
+    }
+
+    function updateParticles() {
+        if (!scene) return;
+
+        for (let i = particles.length - 1; i >= 0; i--) {
+            const p = particles[i];
+
+            if (p.type === 'APPLE') {
+                // Physics
+                p.velocity.y += APPLE_GRAVITY;
+                p.mesh.position.add(p.velocity);
+                p.mesh.rotation.y += 0.015;
+                p.mesh.rotation.x += 0.005;
+
+                // Despawn
+                if (p.mesh.position.y < -12) {
+                    scene.remove(p.mesh);
+                    particles.splice(i, 1);
+                    continue;
+                }
+
+                // Collision Detection
+                let hit = false;
+                for (const handPos of handPositions) {
+                    if (handPos.distanceTo(p.mesh.position) < APPLE_RADIUS + 0.8) {
+                        hit = true;
+                        break;
+                    }
+                }
+
+                if (hit) {
+                    playPianoNote();
+
+                    // Logic: Only change THIS apple's color temporarily for effect
+                    const randomColorHex = HIT_COLORS[Math.floor(Math.random() * HIT_COLORS.length)];
+                    const randomColor = new THREE.Color(randomColorHex);
+
+                    // Clone material so we don't change the global red base
+                    const hitMaterial = p.mesh.material.clone();
+                    hitMaterial.color.set(randomColor);
+                    p.mesh.material = hitMaterial;
+
+                    explode(p.mesh.position, randomColor);
+
+                    scene.remove(p.mesh);
+                    particles.splice(i, 1);
+                    
+                    score++;
+                    scoreElement.innerText = score;
+                }
+
+            } else if (p.type === 'EXPLOSION') {
+                const positions = p.mesh.geometry.attributes.position.array;
+                const velocities = p.mesh.userData.velocities;
+
+                for (let j = 0; j < positions.length / 3; j++) {
+                    positions[j*3] += velocities[j*3];
+                    positions[j*3+1] += velocities[j*3+1];
+                    positions[j*3+2] += velocities[j*3+2];
+                    
+                    velocities[j*3+1] += GRAVITY * 0.5; // Gravity on debris
+                }
+                p.mesh.geometry.attributes.position.needsUpdate = true;
+
+                p.life -= 0.02;
+                p.mesh.material.opacity = p.life;
+
+                if (p.life <= 0) {
+                    scene.remove(p.mesh);
+                    particles.splice(i, 1);
+                }
+            }
+        }
+    }
+
+    // --- Initialization & Loop ---
+    async function init() {
+        // 1. Setup Three.js Scene
+        scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x000000);
+
+        const width = window.innerWidth;
+        const height = window.innerHeight;
+        camera = new THREE.PerspectiveCamera(75, width / height, 0.1, 100);
+        camera.position.z = 10;
+
+        renderer = new THREE.WebGLRenderer({ canvas: canvasElement, alpha: false, antialias: true });
+        renderer.setSize(width, height);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.setClearColor(0x000000, 1);
+
+        // 2. Setup Cursors
+        const cursorGeo = new THREE.SphereGeometry(0.4, 16, 16);
+        const cursorMat = new THREE.MeshBasicMaterial({ 
+            color: 0x00ffff, 
+            transparent: true, 
+            opacity: 0.8,
+            blending: THREE.AdditiveBlending 
+        });
+
+        for (let i = 0; i < 2; i++) {
+            const mesh = new THREE.Mesh(cursorGeo, cursorMat);
+            mesh.visible = false;
+            
+            const ringGeo = new THREE.RingGeometry(0.5, 0.6, 32);
+            const ringMat = new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.4, side: THREE.DoubleSide });
+            const ring = new THREE.Mesh(ringGeo, ringMat);
+            mesh.add(ring);
+
+            scene.add(mesh);
+            cursorMeshes.push(mesh);
+        }
+
+        // 3. Setup MediaPipe
+        try {
+            const vision = await FilesetResolver.forVisionTasks(
+                "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.9/wasm"
+            );
+            
+            handLandmarker = await HandLandmarker.createFromOptions(vision, {
+                baseOptions: {
+                    modelAssetPath: "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
+                    delegate: "GPU"
+                },
+                runningMode: "VIDEO",
+                numHands: 2
+            });
+
+            const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+            videoElement.srcObject = stream;
+            await new Promise((resolve) => {
+                videoElement.onloadedmetadata = () => {
+                    videoElement.play().then(resolve);
+                };
+            });
+
+            // Start loop
+            loadingScreen.style.opacity = '0';
+            setTimeout(() => loadingScreen.remove(), 500);
+            animate();
+
+        } catch (error) {
+            console.error(error);
+            document.querySelector('.status-text').innerText = "Error: Camera access required.";
+        }
+    }
+
+    function animate() {
+        const now = performance.now();
+
+        // 1. Hand Detection
+        if (handLandmarker && videoElement.readyState >= 2) {
+            const results = handLandmarker.detectForVideo(videoElement, now);
+            
+            handPositions = [];
+            cursorMeshes.forEach(m => m.visible = false);
+
+            if (results.landmarks) {
+                results.landmarks.forEach((landmarks, index) => {
+                    if (index >= 2) return; // limit to 2 hands
+
+                    const tip = landmarks[8]; // Index finger tip
+                    
+                    const vector = new THREE.Vector3(
+                        (1 - tip.x) * 2 - 1,
+                        -(tip.y) * 2 + 1,
+                        0.5
+                    );
+                    
+                    vector.unproject(camera);
+                    const dir = vector.sub(camera.position).normalize();
+                    const distance = -camera.position.z / dir.z; 
+                    const pos = camera.position.clone().add(dir.multiplyScalar(distance));
+                    
+                    handPositions.push(pos);
+                    
+                    const cursor = cursorMeshes[index];
+                    if (cursor) {
+                        cursor.position.copy(pos);
+                        cursor.visible = true;
+                        cursor.children[0].rotation.z += 0.1;
+                        cursor.children[0].rotation.x += 0.05;
+                    }
+                });
+            }
+        }
+
+        // 2. Spawn Logic
+        if (now - lastSpawnTime > SPAWN_INTERVAL) {
+            spawnApple();
+            lastSpawnTime = now;
+        }
+
+        // 3. Update & Render
+        updateParticles();
+        renderer.render(scene, camera);
+
+        animationFrameId = requestAnimationFrame(animate);
+    }
+
+    // --- Event Listeners ---
+    window.addEventListener('resize', () => {
+        if (!camera || !renderer) return;
+        const width = window.innerWidth;
+        const height = window.innerHeight;
+        camera.aspect = width / height;
+        camera.updateProjectionMatrix();
+        renderer.setSize(width, height);
+    });
+
+    // Global unlock for audio context
+    const unlockEvents = ['click', 'touchstart', 'keydown'];
+    function unlockAudioHandler() {
+        initAudio();
+        // Remove listeners once unlocked (or keep attempting if failed)
+        if (audioCtx && audioCtx.state === 'running') {
+            unlockEvents.forEach(e => window.removeEventListener(e, unlockAudioHandler));
+        }
+    }
+    unlockEvents.forEach(e => window.addEventListener(e, unlockAudioHandler));
+
+    // Fullscreen Toggle
+    fullscreenBtn.addEventListener('click', () => {
+        if (!document.fullscreenElement) {
+            document.documentElement.requestFullscreen();
+            iconMax.style.display = 'none';
+            iconMin.style.display = 'block';
+        } else {
+            document.exitFullscreen();
+            iconMax.style.display = 'block';
+            iconMin.style.display = 'none';
+        }
+    });
+
+    // Start
+    init();
+
 </script>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="./index.tsx"></script>
-  </body>
+</body>
 </html>
